@@ -23,7 +23,7 @@ namespace RazorTutoEFOriented.Pages.Students
         {
             return Page();
         }
-
+        
         [BindProperty]
         public Student Student { get; set; } = default!;
 
@@ -31,20 +31,19 @@ namespace RazorTutoEFOriented.Pages.Students
         public async Task<IActionResult> OnPostAsync()
         {
             var emptyStudent = new Student();
+            
             if (await TryUpdateModelAsync<Student>(
                 emptyStudent,
-                "student",
+                "Student",
                 s=>s.FirstMidName, 
                 s=>s.LastName, 
                 s=> s.EnrollmentDate
                 ))
             {
-                
-                _context.Students.Add(Student);
+                _context.Students.Add(emptyStudent);
                 await _context.SaveChangesAsync();
                 return RedirectToPage("./Index");
             }
-
             return Page();
         }
     }
