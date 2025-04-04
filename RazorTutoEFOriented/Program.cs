@@ -40,10 +40,23 @@ else
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    if (app.Environment.IsDevelopment())
+    {
+        var context = services.GetRequiredService<SchoolContext>();
+        //This is nice when the project is beggining or at development environment.
+        //However, you don't want your database droppend and restarted on production.
+        //Believe me. You don't.
+        //context.Database.EnsureCreated();
+        DbInitializer.Initialize(context);
+    }
+    else
+    {
+        //This is actually pointless, unless you have some data to initialize production.
+        //Anyways...This project is for learning purposes...
+        var context = services.GetRequiredService<SchoolContextMariaDb>();
+        DbInitializerMariaDb.Initialize(context);
+    }
 
-    var context = services.GetRequiredService<SchoolContext>();
-    context.Database.EnsureCreated();
-    DbInitializer.Initialize(context);
 }
 
 app.UseHttpsRedirection();
