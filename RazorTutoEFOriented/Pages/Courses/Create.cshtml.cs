@@ -10,7 +10,7 @@ using RazorTutoEFOriented.Models;
 
 namespace RazorTutoEFOriented.Pages.Courses
 {
-    public class CreateModel : PageModel
+    public class CreateModel : DepartmentNamePageModel
     {
         private readonly RazorTutoEFOriented.Data.SchoolContext _context;
 
@@ -21,7 +21,7 @@ namespace RazorTutoEFOriented.Pages.Courses
 
         public IActionResult OnGet()
         {
-        ViewData["DepartmentID"] = new SelectList(_context.Departments, "DepartmentID", "DepartmentID");
+            PopulateDepartmentsDropDownList(_context);
             return Page();
         }
 
@@ -31,15 +31,22 @@ namespace RazorTutoEFOriented.Pages.Courses
         // For more information, see https://aka.ms/RazorPagesCRUD.
         public async Task<IActionResult> OnPostAsync()
         {
-            if (!ModelState.IsValid)
+            var emptyCourse = new Course();
+
+            if (await TryUpdateModelAsync<Course>(
+                    emptyCourse,
+                    "course",
+                    s => s.CourseID,
+                    s => s.DepartmentID,
+                    s => s.Title,
+                    s => s.Credits))
             {
-                return Page();
+                _context.Courses.Add(emptyCourse);
+                await _context.SaveChangesAsync();
+                return RedirectToPage("./Index");
             }
-
-            _context.Courses.Add(Course);
-            await _context.SaveChangesAsync();
-
-            return RedirectToPage("./Index");
+            PopulateDepartmentsDropDownList(_context, emptyCourse.DepartmentID);
+            return Page();            
         }
     }
 }
