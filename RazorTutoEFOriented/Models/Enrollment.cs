@@ -1,5 +1,5 @@
 using System.ComponentModel.DataAnnotations;
-
+using System.ComponentModel.DataAnnotations;
 namespace RazorTutoEFOriented.Models;
 
 public enum Grade
@@ -11,7 +11,10 @@ public class Enrollment
 {
     public int EnrollmentID { get; set; }
     public int CourseID { get; set; }
+    
     public int StudentID { get; set; }
+    
+    
     [DisplayFormat(NullDisplayText = "No grade")]
     public Grade? Grade { get; set; }
 
