@@ -11,7 +11,7 @@ using RazorTutoEFOriented.Models;
 
 namespace RazorTutoEFOriented.Pages.Instructors
 {
-    public class EditModel : PageModel
+    public class EditModel : InstructorCoursesPageModel
     {
         private readonly RazorTutoEFOriented.Data.SchoolContext _context;
 
@@ -21,7 +21,7 @@ namespace RazorTutoEFOriented.Pages.Instructors
         }
 
         [BindProperty]
-        public Instructor Instructor { get; set; } = default!;
+        public Instructor Instructor { get; set; }
 
         public async Task<IActionResult> OnGetAsync(int? id)
         {
@@ -30,48 +30,88 @@ namespace RazorTutoEFOriented.Pages.Instructors
                 return NotFound();
             }
 
-            var instructor =  await _context.Instructors.FirstOrDefaultAsync(m => m.ID == id);
-            if (instructor == null)
+            Instructor =  await _context.Instructors
+                .Include(i=>i.OfficeAssigment)
+                .Include(i=>i.Courses)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.ID == id);
+            
+            if (Instructor == null)
             {
                 return NotFound();
             }
-            Instructor = instructor;
+            PopulateAssignedCourseData(_context, Instructor);
             return Page();
         }
 
         // To protect from overposting attacks, enable the specific properties you want to bind to.
         // For more information, see https://aka.ms/RazorPagesCRUD.
-        public async Task<IActionResult> OnPostAsync()
+        public async Task<IActionResult> OnPostAsync(int? id, string[] selectedCourses)
         {
-            if (!ModelState.IsValid)
+            if (id == null)
             {
-                return Page();
+                return NotFound();
             }
+            
+            var instructorToUpdate = await _context.Instructors
+                .Include(i => i.OfficeAssigment)
+                .Include(i => i.Courses)
+                .FirstOrDefaultAsync(s => s.ID == id);
 
-            _context.Attach(Instructor).State = EntityState.Modified;
-
-            try
+            if (await TryUpdateModelAsync<Instructor>(
+                instructorToUpdate,
+                "Instructor",
+                i=>i.FirstMidName,
+                i=>i.LastName,
+                i=> i.HireDate,
+                i => i.OfficeAssigment))
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!InstructorExists(Instructor.ID))
+                if (String.IsNullOrWhiteSpace(instructorToUpdate.OfficeAssigment?.Location))
                 {
-                    return NotFound();
+                    instructorToUpdate.OfficeAssigment = null;
+                }
+
+                UpdateInstructorCourses(selectedCourses, instructorToUpdate);
+                await _context.SaveChangesAsync();
+                return RedirectToPage("./Index");
+            }
+
+            UpdateInstructorCourses(selectedCourses, instructorToUpdate);
+            PopulateAssignedCourseData(_context, instructorToUpdate);
+            return Page();
+        }
+
+        public void UpdateInstructorCourses(string[] selectedCourses, Instructor instructorToUpdate)
+        {
+            if (selectedCourses == null)
+            {
+                instructorToUpdate.Courses = new List<Course>();
+                return;
+            }
+            
+            var selectedCoursesHS = new HashSet<string>(selectedCourses);
+            var instructorCourses = new HashSet<int>(
+                instructorToUpdate.Courses.Select(c => c.CourseID));
+            foreach (var course in _context.Courses)
+            {
+                if (selectedCoursesHS.Contains(course.CourseID.ToString()))
+                {
+                    if (!instructorCourses.Contains(course.CourseID))
+                    {
+                        instructorToUpdate.Courses.Add(course);
+                    }
                 }
                 else
                 {
-                    throw;
+                    if (instructorCourses.Contains(course.CourseID))
+                    {
+                        var courseToRemove = instructorToUpdate.Courses.Single(
+                            c=>c.CourseID == course.CourseID);
+                        instructorToUpdate.Courses.Remove(courseToRemove);
+                    }
                 }
             }
-
-            return RedirectToPage("./Index");
         }
-
-        private bool InstructorExists(int id)
-        {
-            return _context.Instructors.Any(e => e.ID == id);
-        }
+        
     }
 }
