@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
@@ -21,58 +22,119 @@ namespace RazorTutoEFOriented.Pages.Departments
         }
 
         [BindProperty]
-        public Department Department { get; set; } = default!;
+        public Department Department { get; set; }
+        public SelectList InstructorNameSL { get; set; }
 
         public async Task<IActionResult> OnGetAsync(int? id)
         {
-            if (id == null)
+            Department = await _context.Departments
+                .Include(d => d.Administrator)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m=>m.DepartmentID == id);
+            if (Department == null)
             {
                 return NotFound();
             }
-
-            var department =  await _context.Departments.FirstOrDefaultAsync(m => m.DepartmentID == id);
-            if (department == null)
-            {
-                return NotFound();
-            }
-            Department = department;
-           ViewData["InstructorID"] = new SelectList(_context.Instructors, "ID", "FirstMidName");
+            InstructorNameSL = new SelectList(_context.Instructors, 
+                "ID", "FirstMidName");
+            
             return Page();
         }
 
         // To protect from overposting attacks, enable the specific properties you want to bind to.
         // For more information, see https://aka.ms/RazorPagesCRUD.
-        public async Task<IActionResult> OnPostAsync()
+        public async Task<IActionResult> OnPostAsync(int id)
         {
             if (!ModelState.IsValid)
             {
                 return Page();
             }
 
-            _context.Attach(Department).State = EntityState.Modified;
+            var departmentToUpdate = await _context.Departments
+                .Include(i => i.Administrator)
+                .FirstOrDefaultAsync(m=>m.DepartmentID == id);
 
-            try
+            if (departmentToUpdate == null)
             {
-                await _context.SaveChangesAsync();
+                return HandleDeletedDepartment();
             }
-            catch (DbUpdateConcurrencyException)
+            
+            departmentToUpdate.ConcurrencyToken=Guid.NewGuid();
+            
+            _context.Entry(departmentToUpdate).Property(d=>d.ConcurrencyToken)
+                                                .OriginalValue = Department.ConcurrencyToken;
+
+            if (await TryUpdateModelAsync<Department>(
+                departmentToUpdate,
+                "Department",
+                s=> s.Name,
+                s=>s.StartDate,
+                s=>s.Budget,
+                s=>s.InstructorID))
             {
-                if (!DepartmentExists(Department.DepartmentID))
+                try
                 {
-                    return NotFound();
+                    await _context.SaveChangesAsync();
+                    return RedirectToPage("./Index");
                 }
-                else
+                catch (DbUpdateConcurrencyException ex)
                 {
-                    throw;
+                    var exceptionEntry = ex.Entries.Single();
+                    var clientValues=(Department)exceptionEntry.Entity;
+                    var databaseEntry = exceptionEntry.GetDatabaseValues();
+                    if (databaseEntry == null)
+                    {
+                        ModelState.AddModelError(string.Empty, "Unable to save."+
+                                                    "The department was deleted by another user.");
+                        return Page();
+                    }
+                    var dbValues = (Department)databaseEntry.ToObject();
+                    await SetDbErrorMessaage(dbValues, clientValues, _context);
+                    
+                    Department.ConcurrencyToken=dbValues.ConcurrencyToken;
+                    ModelState.Remove($"{nameof(Department)}.{nameof(Department.ConcurrencyToken)}");
                 }
             }
 
-            return RedirectToPage("./Index");
+            InstructorNameSL = new SelectList(_context.Instructors, "ID", "FullName", departmentToUpdate.InstructorID);
+            return Page();
         }
 
-        private bool DepartmentExists(int id)
+        private async Task SetDbErrorMessaage(Department dbValues, Department clientValues, SchoolContext context)
         {
-            return _context.Departments.Any(e => e.DepartmentID == id);
+            if (dbValues.Name != clientValues.Name)
+            {
+                ModelState.AddModelError("Department.Name", $"Current value: {dbValues.Name}");
+            }
+            if (dbValues.Budget != clientValues.Budget)
+            {
+                ModelState.AddModelError("Department.Budget", $"Current value: {dbValues.Budget}");
+            }
+            
+            if (dbValues.StartDate != clientValues.StartDate)
+            {
+                ModelState.AddModelError("Department.StartDate", $"Current value: {dbValues.StartDate}");
+            }
+            if (dbValues.InstructorID != clientValues.InstructorID)
+            {
+                Instructor dbInstructor = await _context.Instructors.FindAsync(dbValues.InstructorID);
+                ModelState.AddModelError("Department.InstructorID", $"Current value: {dbInstructor?.FullName}");
+            }
+            
+            ModelState.AddModelError(string.Empty, """
+                                                   The record you attemped to edit
+                                                   was modified by another user after you.
+                                                   The edit operation was canceled and
+                                                   the current values have been displayed.
+                                                   If you still want to edit this record,
+                                                   click the Save button again.
+                                                   """);
+        }
+        private IActionResult HandleDeletedDepartment()
+        {
+            ModelState.AddModelError(string.Empty, "Unable to save. The department was deleted by another user.");
+            InstructorNameSL = new SelectList(_context.Instructors, "ID", "FullName");
+            return Page();
         }
     }
 }
